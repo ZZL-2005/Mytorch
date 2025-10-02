@@ -15,14 +15,14 @@
 </p>
 
 <p>
-<b>教学优先 · 结构清晰 · 代码最小 · 思路透明</b>
+<b>已包含核心源码与实验脚本；可直接安装 & 复现实验。</b>
 </p>
 
 <sub>English summary at the bottom · 英文简介见文末</sub>
 
 </div>
 
-> “不要直接跳进大型框架黑箱——先从一个你能完整读完的实现开始。” MyTorch 旨在帮助初学者理解 **张量 → 计算图 → 自动求导 → 参数更新 → 训练循环** 的最小闭环。项目包含 CIFAR‑10 多组实验（学习率 / BatchSize / 优化器 / 正则 / Hidden Size 等）及报告与可视化。整体风格坚持 *Minimal Working Implementation*：去除噪声，仅保留核心决策点。
+> 提示：本仓库定位教学与实验复现，优先保证“可读性 + 简洁性”，非性能竞速。欢迎基于此继续扩展。
 
 ---
 
@@ -83,20 +83,40 @@ mytorch/
 
 ## ⚙️ 安装
 
-本地开发（建议使用虚拟环境 / conda）：
+支持两种方式：源代码开发模式（推荐学习/调试）与构建后普通安装。
 
+1. 克隆源码并以“可编辑”模式安装（便于实时修改调试）
 ```bash
 git clone https://github.com/yourname/mytorch.git
 cd mytorch
-pip install -e .
+python -m pip install -e .
+```
+2. （可选）仅作为依赖使用（未来可发布到 PyPI 后替换为 `pip install mytorch`）
+```bash
+python -m pip install .
+```
+3. 开发依赖（静态检查 / 测试）
+```bash
+python -m pip install -e .[dev]
 ```
 
-仅依赖：`numpy`。可选开发依赖（`pytest`, `ruff`, `mypy`）见 `pyproject.toml`。
+核心运行依赖仅 `numpy>=1.23`。其余在 `pyproject.toml` 的可选分组 `dev`。
+
+数据集获取：
+```bash
+# 方法A: 使用脚本（若已提供）
+python scripts/download.py
+
+# 方法B: 手动下载 CIFAR-10 Python 版本 (cifar-10-python.tar.gz) 放到仓库根目录或 data/ 目录
+```
+
+环境最小需求：Python 3.9+，>=8GB 内存（大批量/多实验时更舒适）。GPU 非必需。
 
 ---
 
 ## 🚀 快速上手
 
+### 1. 最小例子：张量前向与反向
 创建一个最小的线性分类器并执行前向与反向：
 
 ```python
@@ -116,7 +136,7 @@ loss.backward()            # 触发反向传播
 print(w.grad)              # 查看梯度
 ```
 
-使用内置 `MLP` 训练 CIFAR‑10（摘自 `train.py`）：
+### 2. 使用内置 `MLP` 训练 CIFAR‑10（摘自 `train.py`）
 
 ```python
 from mytorch import DataLoader, NumpyDataset
@@ -143,11 +163,46 @@ for xb, yb in train_loader:
     break  # 演示一次 batch
 ```
 
-命令行训练：
+### 3. 命令行训练 (MLP)
 
 ```bash
-python train.py --lr 0.1 --batch-size 128 --epochs 50 --optimizer sgd --hidden 512
+python train.py --lr 0.01 --batch-size 128 --epochs 100 --optimizer momentum --hidden 512 \
+  --weight-decay 0 --seed 42
 ```
+
+### 4. 训练内置 CNN
+脚本：`train_cnn.py`（包含日志、最佳权重、微批梯度累积、卷积分块等参数）。
+```bash
+python train_cnn.py --epochs 100 --batch-size 128 --lr 0.01 \
+  --optimizer momentum --log-dir ./logs_cnn --save-best ./best_cnn.npz
+```
+可选内存/稳定性参数：
+```bash
+  --micro-batch 32            # 将一个 batch 拆成更小 micro-batch 逐次反向
+  --conv-chunk-size 16         # 卷积前向分块处理样本数
+  --conv-max-bytes 40000000    # 自动依据上限字节数切块
+  --conv-method loop|im2col    # 回退低内存 loop 实现
+  --mem-profile                # 打印卷积内存估算
+```
+
+输出内容：
+```
+logs_cnn/
+  train_log.csv      # (epoch, phase, loss, acc)
+  history.json       # 累积历史（便于绘图）
+  checkpoints/       # 若 --save-all 开启
+best_cnn.npz         # 验证集最佳模型权重
+```
+
+### 5. 生成/更新 LaTeX 报告
+报告源文件：`report/main.tex`，资源图：`report/images/`。
+推荐使用 XeLaTeX：
+```bash
+cd report
+xelatex main.tex
+xelatex main.tex   # 运行两次保证目录/引用
+```
+生成 `report/main.pdf`。
 
 ---
 
@@ -161,6 +216,16 @@ python train.py --lr 0.1 --batch-size 128 --epochs 50 --optimizer sgd --hidden 5
 | `Module` | 参数容器与层抽象 | 递归参数收集 / `zero_grad()` |
 | 优化器 | 逐参数状态更新 | 统一 `step()` + `weight_decay` |
 | 数据加载 | 简化版 `DataLoader` | 洗牌 / Batch 生成 / 转张量 |
+
+附加机制：
+
+| 主题 | 说明 |
+|------|------|
+| 初始化策略 | Conv2d 采用 Kaiming Normal (fan_out, ReLU)，Linear 可扩展 Xavier/Kaiming |
+| 内存控制 | 卷积前向按样本/字节阈值切块，支持 micro-batch 梯度累积 |
+| 日志系统 | CSV + JSON 双格式，支持恢复/可视化；最佳权重单独保存 |
+| 可视化 | Notebook + Matplotlib：loss/acc 曲线、t-SNE 隐层特征分布 |
+| 可扩展性 | 新增算子：实现 OP_base.forward/backward + 注册；新增层：继承 Module |
 
 ---
 
@@ -208,6 +273,30 @@ python train.py --lr 0.1 --batch-size 128 --epochs 50 --optimizer sgd --hidden 5
 4. 正则化（权重衰减）与泛化
 5. 最佳模型保存 (Val Acc Max) 与测试集评估
 
+核心实验（MLP + CNN）均提供统一日志格式，可复用绘图脚本或 notebook：
+
+| 实验 | 维度 | 目标 |
+|------|------|------|
+| 学习率 × BatchSize | 4×4 组合 | 收敛特征 & 过拟合观察 |
+| 优化器对比 | 6 种 | 收敛速度与稳定性 |
+| 模型宽度 | 8→512 | 表达能力 vs 过拟合 |
+| L2 正则 | 多权重衰减 | 泛化影响 |
+| 简易 CNN | 与 MLP 对比 | 模型先验作用 |
+
+CNN 默认实验设置（与 `train_cnn.py` 同步）：
+
+| 项 | 配置 |
+|----|------|
+| 数据 | CIFAR-10 40k/5k/5k (train/val/test, seed=42, 归一化[0,1]) |
+| 模型 | Conv(3→32,3×3,pad1)-ReLU-Pool2 → Conv(32→64,3×3,pad1)-ReLU-Pool2 → Flatten → FC(4096→10) |
+| 损失 | CrossEntropy (one-hot) |
+| 优化器 | Momentum（对比含 SGD/Adam/Adagrad/RMSProp/Nestrov） |
+| 学习率 | 0.01 |
+| 批大小 | train 128 / eval 256 |
+| 轮数 | 100 (epoch 0 记录初始) |
+| 初始化 | Conv: Kaiming Normal；FC: Xavier；bias=0 |
+| 其它 | 支持卷积分块 / micro-batch；保存最佳权重 |
+
 训练曲线与可视化（详见 `report/images/`）：
 
 <p align="center">
@@ -243,22 +332,24 @@ pytest -q
 
 建议贡献流程：
 
-1. Fork & 新建分支：`feat/op-softmax` 等
-2. 添加算子：实现 forward/backward 并在 `__all__` 导出
-3. 补充最小单元测试用例
-4. 更新文档与示例
-5. 提交 PR（简述动机 / 性能 / API 兼容性）
+1. Fork & 新建分支：`feat/op-softmax` / `fix/conv-backward` 等
+2. 添加算子：继承 OP_base，实现 forward/backward；必要中间量用 `self.saved_tensors`
+3. 补充最小单元测试：梯度正确性可采用数值梯度对比
+4. 更新 README / API 文档 / 示例脚本
+5. 提交 PR：说明动机、API 兼容性、是否影响现有实验复现
 
 ---
 
 ## 🗺️ 路线图 / TODO
 
-- [ ] 更完善的 CNN / 卷积与池化层
-- [ ] 自动广播支持与更完整的张量操作
-- [ ] GPU (CuPy) 可选后端适配
-- [ ] 更丰富的损失函数（L1 / SmoothL1 / Label Smoothing）
-- [ ] 梯度裁剪与学习率调度器
-- [ ] 简单的可视化仪表（loss / acc 实时）
+- [ ] 更完善的 CNN / 卷积与池化层（Padding/Stride 泛化 & loop fallback 优化）
+- [ ] 自动广播与更多张量形状操作（matmul / view / expand）
+- [ ] GPU (CuPy) / 后端抽象层
+- [ ] 更多损失（L1 / SmoothL1 / Label Smoothing / Focal）
+- [ ] 学习率调度器 & 梯度裁剪
+- [ ] Mixup / Cutout 等轻量数据增强
+- [ ] 简易 profiler（记录每算子耗时 / 内存峰值）
+- [ ] Gradient Check 工具脚本
 
 查看 `TODO.md` 获取最新计划。
 
@@ -309,7 +400,7 @@ Email: <zhangzilu@bupt.edu.cn>
 
 ## English Brief
 
-MyTorch is a minimal educational deep learning framework built on top of NumPy. It implements a dynamic computation graph, reverse‑mode autodiff, a small set of neural network modules, classic optimizers, and a light data pipeline. Experiments on CIFAR‑10 (optimizers, learning rates, hidden sizes, weight decay) are included, together with a LaTeX report. The focus is clarity over performance: ideal for students who want to read and extend a framework from scratch.
+MyTorch is a minimal educational deep learning framework built on top of NumPy. It implements a dynamic computation graph, reverse‑mode autodiff, modular layers (Linear / simple CNN), classic optimizers, logging, and a reproducible experiment suite on CIFAR‑10 (optimizers, learning rates, width scaling, regularization, and a lightweight CNN). A LaTeX report (report/main.tex) documents design insights. Emphasis: clarity & extensibility > raw performance.
 
 ### Citation (Optional)
 

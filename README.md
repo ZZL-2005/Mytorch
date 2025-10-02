@@ -382,10 +382,9 @@ pytest -q
 
 ## 🙌 致谢
 
-- 经典框架设计启发：PyTorch / TinyGrad / MicroGrad
+- 经典框架设计启发：PyTorch 
 - 数据集：CIFAR‑10
-- 指导课程 / 助教讨论
-
+- AI工具：Chatgpt
 ---
 
 ## 👤 作者
